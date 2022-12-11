@@ -7,46 +7,44 @@ from pytorch_lightning.callbacks.progress import TQDMProgressBar
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torchvision import transforms
-from torchvision.datasets import MNIST
+from torchvision.datasets import FakeData
+import segmentation_models_pytorch as smp
 
-PATH_DATASETS = os.environ.get("PATH_DATASETS", ".")
-BATCH_SIZE = 64
+BATCH_SIZE = 16
 
-class MNISTModel(LightningModule):
+class Model(LightningModule):
     def __init__(self):
-        width = 10000
-
         super().__init__()
-        self.l1 = torch.nn.Linear(28 * 28, width)
-        self.l2 = torch.nn.Linear(width, width)
-        self.l3 = torch.nn.Linear(width, width)
-        self.l4 = torch.nn.Linear(width, width)
-        self.l5 = torch.nn.Linear(width, width)
-        self.l6 = torch.nn.Linear(width, 10)
+        aux_params=dict(
+            pooling='avg',
+            activation='softmax',
+            classes=100,
+        )
+        self.model = smp.Unet(
+            encoder_name="resnet50",
+            in_channels=3,
+            classes=100,
+            aux_params=aux_params,
+        )
 
     def forward(self, x):
-        x = torch.relu(self.l1(x.view(x.size(0), -1)))
-        x = torch.relu(self.l2(x))
-        x = torch.relu(self.l3(x))
-        x = torch.relu(self.l4(x))
-        x = torch.relu(self.l5(x))
-        x = torch.relu(self.l6(x))
-        return x
+        return self.model(x)
 
     def training_step(self, batch, batch_nb):
         x, y = batch
-        loss = F.cross_entropy(self(x), y)
+        _, y_hat = self.model(x)
+        loss = F.cross_entropy(y_hat, y)
         return loss
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=0.02)
+        return torch.optim.Adam(self.parameters(), lr=1e-3)
 
 def main():
     # Init our model
-    mnist_model = MNISTModel()
+    mnist_model = Model()
 
     # Init DataLoader from MNIST Dataset
-    train_ds = MNIST(PATH_DATASETS, train=True, download=True, transform=transforms.ToTensor())
+    train_ds = FakeData(size=10000, image_size=[3, 256, 256], num_classes=100, transform=transforms.ToTensor())
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE)
 
     # Initialize a trainer
